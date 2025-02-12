@@ -16,14 +16,17 @@ def run_nmap_scan():
     subprocess.run(cmd, shell=True)
     return output_file
 
-def run_zeek_capture(duration):
-    print(f"Starting Zeek capture for {duration} minutes...")
-    cmd = f"timeout {duration * 60} zeek -i eth0 local"
-    os.system(cmd)
-    print("Zeek capture complete.")
+def run_packet_capture(duration):
+    print(f"Starting packet capture for {duration} minutes...")
+    os.system(f"timeout {duration * 60} tcpdump -i eth0 -w capture.pcap")
+    print("Packet capture complete. Running Zeek analysis...")
+    os.system("zeek -r capture.pcap")
 
 def run_suricata_analysis():
-    os.system("suricata -r capture.pcap -l suricata_logs")
+    if os.path.exists("capture.pcap"):
+        os.system("suricata -r capture.pcap -l suricata_logs")
+    else:
+        print("Error: capture.pcap not found. Suricata analysis skipped.")
 
 # === Step 2: Parse and Analyze Data ===
 
@@ -96,7 +99,7 @@ if __name__ == "__main__":
     
     nmap_output = run_nmap_scan()
     findings = parse_nmap_results(nmap_output)
-    run_zeek_capture(duration)
+    run_packet_capture(duration)
     run_suricata_analysis()
     alerts = analyze_suricata_logs()
     generate_pdf_report(findings, alerts)
