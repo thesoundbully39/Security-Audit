@@ -12,7 +12,7 @@ import sys
 
 def run_nmap_scan():
     output_file = "nmap_scan.xml"
-    cmd = f"nmap -sV -O -oX {output_file} 192.168.1.0/24"
+    cmd = f"nmap -sV -O -oX {output_file} 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
     subprocess.run(cmd, shell=True)
     return output_file
 
@@ -27,6 +27,18 @@ def run_suricata_analysis():
         os.system("suricata -r capture.pcap -l suricata_logs")
     else:
         print("Error: capture.pcap not found. Suricata analysis skipped.")
+
+def run_shodan_lookup():
+    shodan_results = {}
+    try:
+        output = subprocess.run("shodan myip", shell=True, capture_output=True, text=True)
+        public_ip = output.stdout.strip()
+        if public_ip:
+            shodan_scan = subprocess.run(f"shodan host {public_ip}", shell=True, capture_output=True, text=True)
+            shodan_results = json.loads(shodan_scan.stdout) if shodan_scan.stdout else {"error": "No data from Shodan"}
+    except Exception as e:
+        shodan_results = {"error": str(e)}
+    return shodan_results
 
 # === Step 2: Parse and Analyze Data ===
 
@@ -65,7 +77,7 @@ def analyze_suricata_logs():
 
 # === Step 3: Generate PDF Report ===
 
-def generate_pdf_report(findings, alerts, output_file="security_audit_report.pdf"):
+def generate_pdf_report(findings, alerts, shodan_results, output_file="security_audit_report.pdf"):
     c = canvas.Canvas(output_file, pagesize=letter)
     c.setFont("Helvetica", 12)
     c.drawString(100, 750, "Home Network Security Audit Report")
@@ -91,6 +103,21 @@ def generate_pdf_report(findings, alerts, output_file="security_audit_report.pdf
         c.drawString(120, y, f"- {alert}")
         y -= 15
     
+    y -= 20
+    c.drawString(100, y, "Shodan Internet Exposure:")
+    y -= 20
+    if "error" in shodan_results:
+        c.drawString(120, y, f"Error: {shodan_results['error']}")
+    else:
+        c.drawString(120, y, f"Public IP: {shodan_results.get('ip_str', 'N/A')}")
+        y -= 15
+        for port in shodan_results.get("ports", []):
+            c.drawString(140, y, f"Open Port: {port}")
+            y -= 15
+        for vuln in shodan_results.get("vulns", []):
+            c.drawString(140, y, f"Vulnerability: {vuln}")
+            y -= 15
+    
     c.save()
 
 # === Run Full Process ===
@@ -102,6 +129,7 @@ if __name__ == "__main__":
     run_packet_capture(duration)
     run_suricata_analysis()
     alerts = analyze_suricata_logs()
-    generate_pdf_report(findings, alerts)
+    shodan_results = run_shodan_lookup()
+    generate_pdf_report(findings, alerts, shodan_results)
     
     print("Report generated: security_audit_report.pdf")
