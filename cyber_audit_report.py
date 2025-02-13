@@ -61,7 +61,7 @@ def run_nmap_details(live_hosts):
         return output_file
 
     ip_list = " ".join(live_hosts)
-    cmd = f"nmap -sV -O -oX {output_file} {ip_list}"
+    cmd = f"nmap -T4 -sV -O -oX {output_file} {ip_list}"
     print(f"Running detailed scan: {cmd}")
     subprocess.run(cmd, shell=True)
     return output_file
