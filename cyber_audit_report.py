@@ -33,7 +33,7 @@ import sys
 def run_nmap_discovery(subnets):
     """Perform a host discovery scan and return a list of live hosts."""
     discovery_file = "host_discovery.gnmap"
-    cmd = f"nmap -sn -oG {discovery_file} {subnets}"
+    cmd = f"nmap --stats-every 5s -sn --host-timeout 30s -oG {discovery_file} {subnets}"
     print(f"Running discovery scan: {cmd}")
     subprocess.run(cmd, shell=True)
 
@@ -64,7 +64,7 @@ def run_nmap_details(live_hosts):
         return output_file
 
     ip_list = " ".join(live_hosts)
-    cmd = f"nmap -T4 -sV -O -oX {output_file} {ip_list}"
+    cmd = f"nmap --stats-every 5s -T4 -sV -O -oX {output_file} {ip_list}"
     print(f"Running detailed scan: {cmd}")
     subprocess.run(cmd, shell=True)
     return output_file
