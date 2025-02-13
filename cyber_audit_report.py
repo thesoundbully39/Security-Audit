@@ -24,6 +24,7 @@ import sys
 #  - Suricata alerts with Signature, Category, Severity, Src IP, Dest IP
 #  - Zeek top talkers from conn.log
 #  - Zeek top queried domains from dns.log
+#  - JSON output (final_results.json) aggregating all data
 ############################################################
 
 
@@ -434,6 +435,26 @@ if __name__ == "__main__":
     alerts = analyze_suricata_logs()
     shodan_results = run_shodan_lookup()
 
-    # 4) Generate PDF with extra Zeek data
+    # 4) Generate PDF (includes Zeek data)
     generate_pdf_report(findings, alerts, shodan_results)
     print("Report generated: security_audit_report.pdf")
+
+    # 5) Create final JSON data (includes all findings)
+    conn_results = parse_zeek_conn_log()
+    dns_results = parse_zeek_dns_log()
+
+    final_data = {
+        "nmap": findings,
+        "suricata": alerts,
+        "shodan": shodan_results,
+        "zeek": {
+            "top_talkers": conn_results,
+            "top_domains": dns_results
+        }
+    }
+
+    # Write to final_results.json
+    with open("final_results.json", "w") as jf:
+        json.dump(final_data, jf, indent=2)
+
+    print("Created final_results.json with consolidated data.")
