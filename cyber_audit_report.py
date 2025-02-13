@@ -26,7 +26,6 @@ import sys
 
 
 # === Step 1: Collect Network Data ===
-
 def run_nmap_discovery(subnets):
     """Perform a host discovery scan and return a list of live hosts."""
     discovery_file = "host_discovery.gnmap"
@@ -103,7 +102,6 @@ def run_shodan_lookup():
 
 
 # === Step 2: Parse and Analyze Data ===
-
 def parse_nmap_results(file):
     tree = ET.parse(file)
     root = tree.getroot()
@@ -173,12 +171,13 @@ def generate_pdf_report(findings, alerts, shodan_results, output_file="security_
     # Device Table
     device_table_data = [["IP Address", "Operating System", "Open Ports"]]
     for device in findings["Devices"]:
+        # Wrap text using Paragraph
+        ip_para = Paragraph(device["IP"], styles["Normal"])
+        os_para = Paragraph(device["OS"], styles["Normal"])
         ports_str = ", ".join(device["Ports"])
-        device_table_data.append([
-            device["IP"],
-            device["OS"],
-            ports_str
-        ])
+        ports_para = Paragraph(ports_str, styles["Normal"])
+
+        device_table_data.append([ip_para, os_para, ports_para])
 
     device_table = Table(device_table_data, colWidths=[2.2*inch, 1.4*inch, 2.0*inch])
     device_table.setStyle(TableStyle([
@@ -189,6 +188,8 @@ def generate_pdf_report(findings, alerts, shodan_results, output_file="security_
         ('BOTTOMPADDING',(0,0),(-1,0),12),
         ('BACKGROUND',(0,1),(-1,-1),colors.beige),
         ('GRID', (0,0), (-1,-1), 1, colors.black),
+        # Enable word wrapping
+        ('WORDWRAP', (0,0), (-1,-1), 'LTR'),
     ]))
 
     flowables.append(Paragraph("<b>Discovered Devices</b>", styles["Heading2"]))
@@ -203,7 +204,9 @@ def generate_pdf_report(findings, alerts, shodan_results, output_file="security_
     if alerts:
         alert_list_data = [["Alert"]]
         for alert in alerts:
-            alert_list_data.append([alert])
+            # Wrap the alert using a Paragraph
+            alert_para = Paragraph(alert, styles["Normal"])
+            alert_list_data.append([alert_para])
         alert_table = Table(alert_list_data, colWidths=[5.5*inch])
         alert_table.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.grey),
@@ -211,6 +214,7 @@ def generate_pdf_report(findings, alerts, shodan_results, output_file="security_
             ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
             ('BOTTOMPADDING',(0,0),(-1,0),12),
             ('GRID', (0,0), (-1,-1), 1, colors.black),
+            ('WORDWRAP', (0,0), (-1,-1), 'LTR'),
         ]))
         flowables.append(alert_table)
     else:
@@ -232,7 +236,8 @@ def generate_pdf_report(findings, alerts, shodan_results, output_file="security_
         # Ports
         ports_data = [["Open Ports"]]
         for port in shodan_results.get("ports", []):
-            ports_data.append([port])
+            port_para = Paragraph(str(port), styles["Normal"])
+            ports_data.append([port_para])
         if len(ports_data) > 1:
             port_table = Table(ports_data, colWidths=[5.5*inch])
             port_table.setStyle(TableStyle([
@@ -241,6 +246,7 @@ def generate_pdf_report(findings, alerts, shodan_results, output_file="security_
                 ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
                 ('BOTTOMPADDING',(0,0),(-1,0),12),
                 ('GRID', (0,0), (-1,-1), 1, colors.black),
+                ('WORDWRAP', (0,0), (-1,-1), 'LTR'),
             ]))
             flowables.append(port_table)
         else:
@@ -251,7 +257,8 @@ def generate_pdf_report(findings, alerts, shodan_results, output_file="security_
         # Vulnerabilities
         vuln_data = [["Vulnerabilities"]]
         for vuln in shodan_results.get("vulns", []):
-            vuln_data.append([vuln])
+            vuln_para = Paragraph(vuln, styles["Normal"])
+            vuln_data.append([vuln_para])
         if len(vuln_data) > 1:
             vuln_table = Table(vuln_data, colWidths=[5.5*inch])
             vuln_table.setStyle(TableStyle([
@@ -260,6 +267,7 @@ def generate_pdf_report(findings, alerts, shodan_results, output_file="security_
                 ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
                 ('BOTTOMPADDING',(0,0),(-1,0),12),
                 ('GRID', (0,0), (-1,-1), 1, colors.black),
+                ('WORDWRAP', (0,0), (-1,-1), 'LTR'),
             ]))
             flowables.append(vuln_table)
         else:
