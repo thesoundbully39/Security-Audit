@@ -38,7 +38,7 @@ The script performs several security-related “tests” or checks on the target
 - The script attempts to discover the public IP by running shodan myip.
 - It then checks Shodan for open ports, exposures, or known vulnerabilities for that IP and includes the details in the final PDF.
 
-7.PDF Report Generation
+7. PDF Report Generation
 - Gathers data from:
   Nmap (Devices, hostnames, OS info, open ports)
   Suricata (Alerts)
