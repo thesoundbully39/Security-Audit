@@ -13,19 +13,56 @@ import time
 import sys
 
 ############################################################
-# This script now accepts two command-line arguments:
-# 1) duration (minutes) for packet capture (default: 60)
-# 2) subnets to scan (default: "10.0.0.0/8 172.16.0.0/12 192.168.0.0/16")
-# Example usage:
-#   python3 cyber_audit_report.py 60 "192.168.1.0/24"
+# This script now performs a two-step Nmap process:
+# 1) Host discovery (-sn) to find live hosts.
+# 2) Feeds discovered hosts into a deeper scan (-sV -O).
+#
+# Usage:
+#   python3 cyber_audit_report.py <duration_in_minutes> "<subnets_to_scan>"
+#
+# Example:
+#   python3 cyber_audit_report.py 30 "192.168.1.0/24"
 ############################################################
 
 
 # === Step 1: Collect Network Data ===
 
-def run_nmap_scan(subnets):
+def run_nmap_discovery(subnets):
+    """Perform a host discovery scan and return a list of live hosts."""
+    discovery_file = "host_discovery.gnmap"
+    cmd = f"nmap -sn -oG {discovery_file} {subnets}"
+    print(f"Running discovery scan: {cmd}")
+    subprocess.run(cmd, shell=True)
+
+    discovered_ips = []
+    if os.path.exists(discovery_file):
+        with open(discovery_file, 'r') as f:
+            for line in f:
+                # Lines with 'Up' typically indicate a live host.
+                # e.g. "Host: 192.168.1.10 ()  Status: Up"
+                if "Up" in line and line.startswith("Host:"):
+                    parts = line.split()
+                    # Typically: parts[0] = "Host:", parts[1] = "192.168.1.10"
+                    if len(parts) > 1:
+                        ip_addr = parts[1]
+                        discovered_ips.append(ip_addr)
+
+    return discovered_ips
+
+
+def run_nmap_details(live_hosts):
+    """Perform a deeper Nmap scan on discovered hosts."""
     output_file = "nmap_scan.xml"
-    cmd = f"nmap -sV -O -oX {output_file} {subnets}"
+    if not live_hosts:
+        print("No live hosts discovered. Creating an empty Nmap XML file.")
+        # Create an empty placeholder XML if needed.
+        with open(output_file, 'w') as f:
+            f.write("<nmaprun></nmaprun>")
+        return output_file
+
+    ip_list = " ".join(live_hosts)
+    cmd = f"nmap -sV -O -oX {output_file} {ip_list}"
+    print(f"Running detailed scan: {cmd}")
     subprocess.run(cmd, shell=True)
     return output_file
 
@@ -53,7 +90,13 @@ def run_shodan_lookup():
         if public_ip:
             # Query Shodan for the external IP's details
             shodan_scan = subprocess.run(f"shodan host {public_ip}", shell=True, capture_output=True, text=True)
-            shodan_results = json.loads(shodan_scan.stdout) if shodan_scan.stdout else {"error": "No data from Shodan"}
+            if shodan_scan.stdout:
+                try:
+                    shodan_results = json.loads(shodan_scan.stdout)
+                except json.JSONDecodeError:
+                    shodan_results = {"error": "Invalid JSON from Shodan"}
+            else:
+                shodan_results = {"error": "No data from Shodan"}
     except Exception as e:
         shodan_results = {"error": str(e)}
     return shodan_results
@@ -228,7 +271,10 @@ def generate_pdf_report(findings, alerts, shodan_results, output_file="security_
     doc.build(flowables)
 
 
-# === Run Full Process ===
+############################################################
+# Main Execution
+############################################################
+
 if __name__ == "__main__":
     # 1) Duration argument
     duration = 60  # default
@@ -243,7 +289,11 @@ if __name__ == "__main__":
     if len(sys.argv) > 2:
         subnets = sys.argv[2]
 
-    nmap_output = run_nmap_scan(subnets)
+    # === Host Discovery then Detailed Scan ===
+    live_hosts = run_nmap_discovery(subnets)
+    nmap_output = run_nmap_details(live_hosts)
+
+    # === Other Functions ===
     findings = parse_nmap_results(nmap_output)
     run_packet_capture(duration)
     run_suricata_analysis()
