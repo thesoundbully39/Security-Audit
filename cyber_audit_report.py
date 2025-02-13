@@ -17,6 +17,10 @@ import sys
 # 1) Host discovery (-sn) to find live hosts.
 # 2) Feeds discovered hosts into a deeper scan (-sV -O).
 #
+# In this version:
+#   - We add a column for Hostname to the Nmap device table
+#   - We add columns for Category and Severity to the Suricata Alerts
+#
 # Usage:
 #   python3 cyber_audit_report.py <duration_in_minutes> "<subnets_to_scan>"
 #
@@ -113,9 +117,18 @@ def parse_nmap_results(file):
             continue
         ip_address = ip_element.get("addr", "Unknown")
 
+        # Parse OS
         os_info = host.find("os/osmatch")
         os_name = os_info.get("name") if os_info is not None else "Unknown"
 
+        # Parse Hostname
+        hostname_elem = host.find("hostnames/hostname")
+        if hostname_elem is not None:
+            hostname = hostname_elem.get("name", "Unknown")
+        else:
+            hostname = "Unknown"
+
+        # Parse Ports
         ports = []
         for port in host.findall(".//port"):
             port_id = port.get("portid")
@@ -125,6 +138,7 @@ def parse_nmap_results(file):
 
         findings["Devices"].append({
             "IP": ip_address,
+            "Hostname": hostname,
             "OS": os_name,
             "Ports": ports
         })
@@ -141,12 +155,16 @@ def analyze_suricata_logs():
             for line in f:
                 event = json.loads(line)
                 if event.get("event_type") == "alert":
-                    alerts.append(event["alert"]["signature"])
+                    alert_info = {
+                        "signature": event["alert"].get("signature", "Unknown"),
+                        "category": event["alert"].get("category", "N/A"),
+                        "severity": event["alert"].get("severity", "N/A")
+                    }
+                    alerts.append(alert_info)
     return alerts
 
 
 # === Step 3: Generate PDF Report with Enhanced Layout ===
-
 def generate_pdf_report(findings, alerts, shodan_results, output_file="security_audit_report.pdf"):
     doc = SimpleDocTemplate(output_file, pagesize=letter)
     styles = getSampleStyleSheet()
@@ -168,18 +186,18 @@ def generate_pdf_report(findings, alerts, shodan_results, output_file="security_
     flowables.append(Paragraph(summary_text, styles["Normal"]))
     flowables.append(Spacer(1, 0.25*inch))
 
-    # Device Table
-    device_table_data = [["IP Address", "Operating System", "Open Ports"]]
+    # Device Table (Now with Hostname)
+    device_table_data = [["IP Address", "Hostname", "Operating System", "Open Ports"]]
     for device in findings["Devices"]:
-        # Wrap text using Paragraph
         ip_para = Paragraph(device["IP"], styles["Normal"])
+        hostname_para = Paragraph(device["Hostname"], styles["Normal"])
         os_para = Paragraph(device["OS"], styles["Normal"])
         ports_str = ", ".join(device["Ports"])
         ports_para = Paragraph(ports_str, styles["Normal"])
 
-        device_table_data.append([ip_para, os_para, ports_para])
+        device_table_data.append([ip_para, hostname_para, os_para, ports_para])
 
-    device_table = Table(device_table_data, colWidths=[2.2*inch, 1.4*inch, 2.0*inch])
+    device_table = Table(device_table_data, colWidths=[1.5*inch, 1.5*inch, 1.5*inch, 2.0*inch])
     device_table.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.grey),
         ('TEXTCOLOR',(0,0),(-1,0),colors.whitesmoke),
@@ -188,7 +206,6 @@ def generate_pdf_report(findings, alerts, shodan_results, output_file="security_
         ('BOTTOMPADDING',(0,0),(-1,0),12),
         ('BACKGROUND',(0,1),(-1,-1),colors.beige),
         ('GRID', (0,0), (-1,-1), 1, colors.black),
-        # Enable word wrapping
         ('WORDWRAP', (0,0), (-1,-1), 'LTR'),
     ]))
 
@@ -202,12 +219,15 @@ def generate_pdf_report(findings, alerts, shodan_results, output_file="security_
     flowables.append(Spacer(1, 0.1*inch))
 
     if alerts:
-        alert_list_data = [["Alert"]]
+        # New columns: Signature, Category, Severity
+        alert_list_data = [["Signature", "Category", "Severity"]]
         for alert in alerts:
-            # Wrap the alert using a Paragraph
-            alert_para = Paragraph(alert, styles["Normal"])
-            alert_list_data.append([alert_para])
-        alert_table = Table(alert_list_data, colWidths=[5.5*inch])
+            sig_para = Paragraph(alert["signature"], styles["Normal"])
+            cat_para = Paragraph(alert["category"], styles["Normal"])
+            sev_para = Paragraph(str(alert["severity"]), styles["Normal"])
+            alert_list_data.append([sig_para, cat_para, sev_para])
+
+        alert_table = Table(alert_list_data, colWidths=[3.0*inch, 1.5*inch, 1.0*inch])
         alert_table.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.grey),
             ('TEXTCOLOR',(0,0),(-1,0),colors.whitesmoke),
