@@ -44,3 +44,13 @@ The script performs several security-related “tests” or checks on the target
   Suricata (Alerts)
   Shodan (Internet exposure)
 - Produces security_audit_report.pdf with tables that summarize the findings.
+
+Usage
+1. Install dependencies (e.g. pip install reportlab shodan pandas).
+2. Ensure nmap, tcpdump, suricata, and zeek are installed on your system.
+Run:
+python3 audit.py 60 "192.168.1.0/24"
+- This will do a 60-minute capture on 192.168.1.0/24 (or the default subnets if not provided).
+- Generate security_audit_report.pdf.
+- Save consolidated data in final_results.json.
+
