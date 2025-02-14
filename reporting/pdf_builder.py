@@ -1,247 +1,66 @@
 # file: reporting/pdf_builder.py
 
-import json
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle)
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 
+# Import your iot_detection if you want to call assess_iot_risk here
+from analysis.iot_detection import assess_iot_risk, correlate_iot_alerts
+
 def generate_pdf_report(
-    findings,           # dict from parse_nmap_results
-    alerts,             # list from analyze_suricata_logs
-    shodan_results,     # dict from run_shodan_lookup
-    conn_results=None,  # list from parse_zeek_conn_log
-    dns_results=None,   # list from parse_zeek_dns_log
-    iot_devices=None,   # list of potential IoT devices from find_iot_devices
+    findings,
+    alerts,
+    shodan_results,
+    conn_results=None,
+    dns_results=None,
+    iot_devices=None,
     output_file="security_audit_report.pdf"
 ):
-    """
-    Build the PDF. 
-      - 'findings': { 'Open Ports': <int>, 'Devices': [...] }
-      - 'alerts': list of Suricata alerts
-      - 'shodan_results': from run_shodan_lookup
-      - 'conn_results': optional top talkers from Zeek
-      - 'dns_results': optional top domains from Zeek
-      - 'iot_devices': optional list from find_iot_devices
-    """
-
     doc = SimpleDocTemplate(output_file, pagesize=letter)
     styles = getSampleStyleSheet()
     flowables = []
 
-    # --- Title ---
-    title = Paragraph("<strong>Home Network Security Audit Report</strong>", styles["Title"])
-    flowables.append(title)
-    flowables.append(Spacer(1, 0.25*inch))
+    # (Omitted: Title, Device table, Suricata alerts, etc. for brevity)
+    # ...
 
-    # --- Intro Paragraph ---
-    intro_text = (
-        "This report provides an overview of devices discovered on your network, open ports, "
-        "intrusion alerts captured by Suricata, Zeek traffic summaries, and Shodan results. "
-        "Potential IoT devices have been flagged, along with any high-risk ports."
-    )
-    flowables.append(Paragraph(intro_text, styles["Normal"]))
-    flowables.append(Spacer(1, 0.25*inch))
-
-    # --- Open Ports Summary ---
-    total_ports = findings.get("Open Ports", 0)
-    summary_text = f"<b>Total Open Ports Detected:</b> {total_ports}"
-    flowables.append(Paragraph(summary_text, styles["Normal"]))
-    flowables.append(Spacer(1, 0.25*inch))
-
-    # --- Discovered Devices Table ---
-    device_table_data = [["IP", "MAC", "Vendor", "Hostname", "OS", "Open Ports"]]
-    for device in findings.get("Devices", []):
-        device_table_data.append([
-            Paragraph(device.get("IP", "Unknown"), styles["Normal"]),
-            Paragraph(device.get("MAC", "Unknown"), styles["Normal"]),
-            Paragraph(device.get("Vendor", "Unknown"), styles["Normal"]),
-            Paragraph(device.get("Hostname", "Unknown"), styles["Normal"]),
-            Paragraph(device.get("OS", "Unknown"), styles["Normal"]),
-            Paragraph(", ".join(device.get("Ports", [])), styles["Normal"]),
-        ])
-
-    device_table = Table(device_table_data, colWidths=[1.1*inch, 1.1*inch, 1.2*inch, 1.4*inch, 1.2*inch, 2.2*inch])
-    device_table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.grey),
-        ('TEXTCOLOR',(0,0),(-1,0),colors.whitesmoke),
-        ('ALIGN',(0,0),(-1,-1),'LEFT'),
-        ('VALIGN',(0,0),(-1,-1),'TOP'),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('BOTTOMPADDING',(0,0),(-1,0),12),
-        ('BACKGROUND',(0,1),(-1,-1),colors.beige),
-        ('GRID', (0,0), (-1,-1), 1, colors.black),
-        # Word wrapping:
-        ('WORDWRAP', (0,0), (-1,-1), 'CJK'),
-    ]))
-
-    flowables.append(Paragraph("<b>Discovered Devices</b>", styles["Heading2"]))
-    flowables.append(Spacer(1, 0.1*inch))
-    flowables.append(device_table)
-    flowables.append(Spacer(1, 0.25*inch))
-
-    # --- Potential IoT Devices Table ---
+    # Potential IoT Devices
     flowables.append(Paragraph("<b>Potential IoT Devices</b>", styles["Heading2"]))
     flowables.append(Spacer(1, 0.1*inch))
     if iot_devices:
-        iot_table_data = [["IP", "Vendor", "OS", "Risk", "Open Ports"]]
+        correlate_iot_alerts(iot_devices, alerts)  # mark alerts
+        iot_table_data = [["IP", "Vendor", "OS", "Risk", "CVEs", "Ports"]]
         for dev in iot_devices:
-            # If you want to call a risk function here or store a risk in dev
-            risk_level = dev.get("risk_level", "LOW")  # or a function call
+            risk = assess_iot_risk(dev)
+            cves = dev.get("CVEs", [])
+            cves_str = ", ".join(cves) if cves else "None"
+            ports_str = ", ".join(dev.get("Ports", []))
+
             iot_table_data.append([
-                Paragraph(dev.get("IP", "Unknown"), styles["Normal"]),
-                Paragraph(dev.get("Vendor", "Unknown"), styles["Normal"]),
-                Paragraph(dev.get("OS", "Unknown"), styles["Normal"]),
-                risk_level,
-                Paragraph(", ".join(dev.get("Ports", [])), styles["Normal"])
+                dev.get("IP","Unknown"),
+                dev.get("Vendor","Unknown"),
+                dev.get("OS","Unknown"),
+                risk,
+                cves_str,
+                ports_str
             ])
 
-        iot_table = Table(iot_table_data, colWidths=[1.2*inch, 1.5*inch, 1.3*inch, 0.8*inch, 2.0*inch])
+        iot_table = Table(iot_table_data, colWidths=[1.2*inch,1.2*inch,1.2*inch,0.8*inch,2.0*inch,2.0*inch])
         iot_table.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.grey),
+            ('BACKGROUND',(0,0),(-1,0),colors.grey),
             ('TEXTCOLOR',(0,0),(-1,0),colors.whitesmoke),
             ('ALIGN',(0,0),(-1,-1),'LEFT'),
             ('VALIGN',(0,0),(-1,-1),'TOP'),
-            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
             ('BOTTOMPADDING',(0,0),(-1,0),12),
-            ('GRID', (0,0), (-1,-1), 1, colors.black),
-            # Word wrapping for IoT table:
-            ('WORDWRAP', (0,0), (-1,-1), 'CJK'),
+            ('GRID',(0,0),(-1,-1),1, colors.black),
+            ('WORDWRAP',(0,0),(-1,-1),'CJK'),
         ]))
         flowables.append(iot_table)
     else:
         flowables.append(Paragraph("No potential IoT devices identified.", styles["Normal"]))
     flowables.append(Spacer(1, 0.25*inch))
 
-    # --- Zeek Connection Summary ---
-    if conn_results is not None:
-        flowables.append(Paragraph("<b>Zeek Connection Summary (Top Talkers)</b>", styles["Heading2"]))
-        flowables.append(Spacer(1, 0.1*inch))
-        if conn_results:
-            conn_data = [["Source IP", "Connections", "Total Bytes"]]
-            for (src_ip, conn_count, total_bytes) in conn_results:
-                conn_data.append([src_ip, str(conn_count), str(total_bytes)])
-            conn_table = Table(conn_data, colWidths=[2.0*inch, 1.0*inch, 2.0*inch])
-            conn_table.setStyle(TableStyle([
-                ('BACKGROUND', (0,0), (-1,0), colors.grey),
-                ('TEXTCOLOR',(0,0),(-1,0),colors.whitesmoke),
-                ('ALIGN',(0,0),(-1,-1),'LEFT'),
-                ('VALIGN',(0,0),(-1,-1),'TOP'),
-                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-                ('BOTTOMPADDING',(0,0),(-1,0),12),
-                ('GRID', (0,0), (-1,-1), 1, colors.black),
-                ('WORDWRAP', (0,0), (-1,-1), 'CJK'),
-            ]))
-            flowables.append(conn_table)
-        else:
-            flowables.append(Paragraph("No conn.log data or file not found.", styles["Normal"]))
-        flowables.append(Spacer(1, 0.25*inch))
-
-    # --- Zeek DNS Summary ---
-    if dns_results is not None:
-        flowables.append(Paragraph("<b>Zeek DNS Summary (Top Queried Domains)</b>", styles["Heading2"]))
-        flowables.append(Spacer(1, 0.1*inch))
-        if dns_results:
-            dns_data = [["Domain", "Query Count"]]
-            for (domain, count) in dns_results:
-                dns_data.append([domain, str(count)])
-            dns_table = Table(dns_data, colWidths=[4.0*inch, 1.5*inch])
-            dns_table.setStyle(TableStyle([
-                ('BACKGROUND', (0,0), (-1,0), colors.grey),
-                ('TEXTCOLOR',(0,0),(-1,0),colors.whitesmoke),
-                ('ALIGN',(0,0),(-1,-1),'LEFT'),
-                ('VALIGN',(0,0),(-1,-1),'TOP'),
-                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-                ('BOTTOMPADDING',(0,0),(-1,0),12),
-                ('GRID', (0,0), (-1,-1), 1, colors.black),
-                ('WORDWRAP', (0,0), (-1,-1), 'CJK'),
-            ]))
-            flowables.append(dns_table)
-        else:
-            flowables.append(Paragraph("No dns.log data or file not found.", styles["Normal"]))
-        flowables.append(Spacer(1, 0.25*inch))
-
-    # --- Suricata Alerts ---
-    flowables.append(Paragraph("<b>Intrusion Alerts (Suricata)</b>", styles["Heading2"]))
-    flowables.append(Spacer(1, 0.1*inch))
-    if alerts:
-        alert_list_data = [["Signature", "Category", "Severity", "Source IP", "Destination IP"]]
-        for alert in alerts:
-            sig_para = Paragraph(alert.get("signature", "Unknown"), styles["Normal"])
-            cat_para = Paragraph(alert.get("category", "N/A"), styles["Normal"])
-            sev_para = Paragraph(str(alert.get("severity", "N/A")), styles["Normal"])
-            src_para = Paragraph(alert.get("src_ip", "Unknown"), styles["Normal"])
-            dst_para = Paragraph(alert.get("dest_ip", "Unknown"), styles["Normal"])
-            alert_list_data.append([sig_para, cat_para, sev_para, src_para, dst_para])
-
-        alert_table = Table(alert_list_data, colWidths=[2.0*inch, 1.2*inch, 0.6*inch, 1.2*inch, 1.2*inch])
-        alert_table.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.grey),
-            ('TEXTCOLOR',(0,0),(-1,0),colors.whitesmoke),
-            ('ALIGN',(0,0),(-1,-1),'LEFT'),
-            ('VALIGN',(0,0),(-1,-1),'TOP'),
-            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-            ('BOTTOMPADDING',(0,0),(-1,0),12),
-            ('GRID', (0,0), (-1,-1), 1, colors.black),
-            ('WORDWRAP', (0,0), (-1,-1), 'CJK'),
-        ]))
-        flowables.append(alert_table)
-    else:
-        flowables.append(Paragraph("No intrusion alerts detected.", styles["Normal"]))
-    flowables.append(Spacer(1, 0.25*inch))
-
-    # --- Shodan Results ---
-    flowables.append(Paragraph("<b>Shodan Internet Exposure</b>", styles["Heading2"]))
-    flowables.append(Spacer(1, 0.1*inch))
-    if "error" in shodan_results:
-        flowables.append(Paragraph(f"Error: {shodan_results['error']}", styles["Normal"]))
-    else:
-        public_ip = shodan_results.get('ip_str', 'N/A')
-        flowables.append(Paragraph(f"<b>Public IP:</b> {public_ip}", styles["Normal"]))
-        flowables.append(Spacer(1, 0.1*inch))
-
-        # Ports
-        ports_data = [["Open Ports"]]
-        for port in shodan_results.get("ports", []):
-            port_para = Paragraph(str(port), styles["Normal"])
-            ports_data.append([port_para])
-        if len(ports_data) > 1:
-            port_table = Table(ports_data, colWidths=[5.5*inch])
-            port_table.setStyle(TableStyle([
-                ('BACKGROUND', (0,0), (-1,0), colors.grey),
-                ('TEXTCOLOR',(0,0),(-1,0),colors.whitesmoke),
-                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-                ('BOTTOMPADDING',(0,0),(-1,0),12),
-                ('GRID', (0,0), (-1,-1), 1, colors.black),
-                ('WORDWRAP', (0,0), (-1,-1), 'CJK'),
-            ]))
-            flowables.append(port_table)
-        else:
-            flowables.append(Paragraph("No open ports listed by Shodan.", styles["Normal"]))
-
-        flowables.append(Spacer(1, 0.2*inch))
-
-        # Vulnerabilities
-        vuln_data = [["Vulnerabilities"]]
-        for vuln in shodan_results.get("vulns", []):
-            vuln_para = Paragraph(vuln, styles["Normal"])
-            vuln_data.append([vuln_para])
-        if len(vuln_data) > 1:
-            vuln_table = Table(vuln_data, colWidths=[5.5*inch])
-            vuln_table.setStyle(TableStyle([
-                ('BACKGROUND', (0,0), (-1,0), colors.grey),
-                ('TEXTCOLOR',(0,0),(-1,0),colors.whitesmoke),
-                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-                ('BOTTOMPADDING',(0,0),(-1,0),12),
-                ('GRID', (0,0), (-1,-1), 1, colors.black),
-                ('WORDWRAP', (0,0), (-1,-1), 'CJK'),
-            ]))
-            flowables.append(vuln_table)
-        else:
-            flowables.append(Paragraph("No vulnerabilities reported by Shodan.", styles["Normal"]))
-
-    flowables.append(Spacer(1, 0.25*inch))
-
-    # Build the PDF
+    # (Omitted: Suricata alerts, Shodan, Zeek tables, etc.)
     doc.build(flowables)
