@@ -7,28 +7,23 @@ from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table, Tab
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import inch
 
-# Import your IoT detection or other analysis modules if needed for direct calls here
-# Typically, you'll just pass data from 'audit.py' or call certain analysis functions if you prefer.
-# For example:
-# from analysis.iot_detection import assess_iot_risk, find_iot_devices, correlate_iot_alerts
-
 def generate_pdf_report(
     findings,           # dict from parse_nmap_results
     alerts,             # list from analyze_suricata_logs
     shodan_results,     # dict from run_shodan_lookup
-    conn_results=None,  # list of (ip, conn_count, bytes) from parse_zeek_conn_log
-    dns_results=None,   # list of (domain, count) from parse_zeek_dns_log
-    iot_devices=None,   # optional list of iot devices from find_iot_devices
+    conn_results=None,  # list from parse_zeek_conn_log
+    dns_results=None,   # list from parse_zeek_dns_log
+    iot_devices=None,   # list of potential IoT devices from find_iot_devices
     output_file="security_audit_report.pdf"
 ):
     """
     Build the PDF. 
-    'findings' typically has:
-        { 'Open Ports': <int>, 'Devices': [ { 'IP':..., 'Ports':...}, ... ] }
-    'alerts': Suricata alert list
-    'shodan_results': from run_shodan_lookup
-    'conn_results' and 'dns_results': from parse_zeek_conn_log / parse_zeek_dns_log
-    'iot_devices': from find_iot_devices (optional if you prefer to do it here)
+      - 'findings': { 'Open Ports': <int>, 'Devices': [...] }
+      - 'alerts': list of Suricata alerts
+      - 'shodan_results': from run_shodan_lookup
+      - 'conn_results': optional top talkers from Zeek
+      - 'dns_results': optional top domains from Zeek
+      - 'iot_devices': optional list from find_iot_devices
     """
 
     doc = SimpleDocTemplate(output_file, pagesize=letter)
@@ -50,7 +45,8 @@ def generate_pdf_report(
     flowables.append(Spacer(1, 0.25*inch))
 
     # --- Open Ports Summary ---
-    summary_text = f"<b>Total Open Ports Detected:</b> {findings.get('Open Ports', 0)}"
+    total_ports = findings.get("Open Ports", 0)
+    summary_text = f"<b>Total Open Ports Detected:</b> {total_ports}"
     flowables.append(Paragraph(summary_text, styles["Normal"]))
     flowables.append(Spacer(1, 0.25*inch))
 
@@ -76,7 +72,8 @@ def generate_pdf_report(
         ('BOTTOMPADDING',(0,0),(-1,0),12),
         ('BACKGROUND',(0,1),(-1,-1),colors.beige),
         ('GRID', (0,0), (-1,-1), 1, colors.black),
-        ('WORDWRAP', (0,0), (-1,-1), 'CJK'),  # Ensures text wraps
+        # Word wrapping:
+        ('WORDWRAP', (0,0), (-1,-1), 'CJK'),
     ]))
 
     flowables.append(Paragraph("<b>Discovered Devices</b>", styles["Heading2"]))
@@ -84,37 +81,38 @@ def generate_pdf_report(
     flowables.append(device_table)
     flowables.append(Spacer(1, 0.25*inch))
 
-    # --- IoT Devices (optional) ---
-    if iot_devices is not None:
-        flowables.append(Paragraph("<b>Potential IoT Devices</b>", styles["Heading2"]))
-        flowables.append(Spacer(1, 0.1*inch))
-        if iot_devices:
-            iot_table_data = [["IP", "Vendor", "OS", "Risk", "Open Ports"]]
-            for dev in iot_devices:
-                # Suppose you also pass a "risk_level" or call assess_iot_risk(dev) here
-                risk_level = "LOW"  # or dev["risk"], etc.
-                iot_table_data.append([
-                    dev.get("IP", "Unknown"),
-                    dev.get("Vendor", "Unknown"),
-                    dev.get("OS", "Unknown"),
-                    risk_level,
-                    ", ".join(dev.get("Ports", []))
-                ])
-            iot_table = Table(iot_table_data, colWidths=[1.2*inch, 1.5*inch, 1.3*inch, 0.8*inch, 2.0*inch])
-            iot_table.setStyle(TableStyle([
-                ('BACKGROUND', (0,0), (-1,0), colors.grey),
-                ('TEXTCOLOR',(0,0),(-1,0),colors.whitesmoke),
-                ('ALIGN',(0,0),(-1,-1),'LEFT'),
-                ('VALIGN',(0,0),(-1,-1),'TOP'),
-                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-                ('BOTTOMPADDING',(0,0),(-1,0),12),
-                ('GRID', (0,0), (-1,-1), 1, colors.black),
-                ('WORDWRAP', (0,0), (-1,-1), 'CJK'),
-            ]))
-            flowables.append(iot_table)
-        else:
-            flowables.append(Paragraph("No potential IoT devices identified.", styles["Normal"]))
-        flowables.append(Spacer(1, 0.25*inch))
+    # --- Potential IoT Devices Table ---
+    flowables.append(Paragraph("<b>Potential IoT Devices</b>", styles["Heading2"]))
+    flowables.append(Spacer(1, 0.1*inch))
+    if iot_devices:
+        iot_table_data = [["IP", "Vendor", "OS", "Risk", "Open Ports"]]
+        for dev in iot_devices:
+            # If you want to call a risk function here or store a risk in dev
+            risk_level = dev.get("risk_level", "LOW")  # or a function call
+            iot_table_data.append([
+                Paragraph(dev.get("IP", "Unknown"), styles["Normal"]),
+                Paragraph(dev.get("Vendor", "Unknown"), styles["Normal"]),
+                Paragraph(dev.get("OS", "Unknown"), styles["Normal"]),
+                risk_level,
+                Paragraph(", ".join(dev.get("Ports", [])), styles["Normal"])
+            ])
+
+        iot_table = Table(iot_table_data, colWidths=[1.2*inch, 1.5*inch, 1.3*inch, 0.8*inch, 2.0*inch])
+        iot_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.grey),
+            ('TEXTCOLOR',(0,0),(-1,0),colors.whitesmoke),
+            ('ALIGN',(0,0),(-1,-1),'LEFT'),
+            ('VALIGN',(0,0),(-1,-1),'TOP'),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('BOTTOMPADDING',(0,0),(-1,0),12),
+            ('GRID', (0,0), (-1,-1), 1, colors.black),
+            # Word wrapping for IoT table:
+            ('WORDWRAP', (0,0), (-1,-1), 'CJK'),
+        ]))
+        flowables.append(iot_table)
+    else:
+        flowables.append(Paragraph("No potential IoT devices identified.", styles["Normal"]))
+    flowables.append(Spacer(1, 0.25*inch))
 
     # --- Zeek Connection Summary ---
     if conn_results is not None:
@@ -169,19 +167,14 @@ def generate_pdf_report(
     flowables.append(Spacer(1, 0.1*inch))
     if alerts:
         alert_list_data = [["Signature", "Category", "Severity", "Source IP", "Destination IP"]]
-        # Optionally add "IoT?" if you correlated them
-        # alert_list_data = [["Signature", "Category", "Severity", "Source IP", "Destination IP", "IoT?"]]
         for alert in alerts:
             sig_para = Paragraph(alert.get("signature", "Unknown"), styles["Normal"])
             cat_para = Paragraph(alert.get("category", "N/A"), styles["Normal"])
             sev_para = Paragraph(str(alert.get("severity", "N/A")), styles["Normal"])
             src_para = Paragraph(alert.get("src_ip", "Unknown"), styles["Normal"])
             dst_para = Paragraph(alert.get("dest_ip", "Unknown"), styles["Normal"])
-            # iot_flag = "Yes" if alert.get("iot_related") else "No"
-            # alert_list_data.append([sig_para, cat_para, sev_para, src_para, dst_para, iot_flag])
             alert_list_data.append([sig_para, cat_para, sev_para, src_para, dst_para])
 
-        # If you added "IoT?" above, adjust colWidths for 6 columns
         alert_table = Table(alert_list_data, colWidths=[2.0*inch, 1.2*inch, 0.6*inch, 1.2*inch, 1.2*inch])
         alert_table.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.grey),
@@ -250,5 +243,5 @@ def generate_pdf_report(
 
     flowables.append(Spacer(1, 0.25*inch))
 
-    # Finally, build the PDF
+    # Build the PDF
     doc.build(flowables)
