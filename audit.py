@@ -1,100 +1,107 @@
-# file: audit.py
-
+#!/usr/bin/env python3
 import sys
 import json
 import os
 
-# SCAN
-from scan.network_scans import run_nmap_discovery, run_nmap_details, parse_nmap_results, run_shodan_lookup
+# SCAN MODULES
+from scan.network_scans import (
+    run_nmap_discovery,
+    run_nmap_details,
+    parse_nmap_results,
+    run_shodan_lookup
+)
 from scan.packet_capture import run_packet_capture
 
-# ANALYSIS
+# ANALYSIS MODULES
 from analysis.suricata import run_suricata_analysis, analyze_suricata_logs
 from analysis.zeek import parse_zeek_conn_log, parse_zeek_dns_log
 from analysis.iot_detection import find_iot_devices
 
-# REPORTING
+# REPORTING MODULE
 from reporting.pdf_builder import generate_pdf_report
 
 def main():
-    # Check for optional --regen
+    # Check for --regen flag
     if "--regen" in sys.argv:
         try:
-            with open("final_results.json","r") as f:
+            with open("final_results.json", "r") as f:
                 data = json.load(f)
         except FileNotFoundError:
-            print("No final_results.json found, cannot --regen.")
+            print("Error: final_results.json not found. Cannot regenerate report.")
+            sys.exit(1)
+        except json.JSONDecodeError:
+            print("Error: final_results.json is invalid JSON.")
             sys.exit(1)
 
-        # If we want to pass an NVD key again, parse from environment or sys.argv
-        # or do nvd_api_key = os.getenv("NVD_API_KEY")
-        # For now, assume the last arg is the key
+        # Optional: Get NVD API key from command-line (last argument)
         nvd_api_key = ""
         if len(sys.argv) > 2:
             nvd_api_key = sys.argv[-1]
 
-        findings = data["nmap"]
-        alerts = data["suricata"]
-        shodan_res = data["shodan"]
-        z_data = data["zeek"]
-        conn_zeek = z_data["top_talkers"]
-        dns_zeek = z_data["top_domains"]
+        findings = data.get("nmap", {})
+        alerts = data.get("suricata", [])
+        shodan_res = data.get("shodan", {})
+        zeek_data = data.get("zeek", {})
+        conn_zeek = zeek_data.get("top_talkers", [])
+        dns_zeek = zeek_data.get("top_domains", [])
 
-        # Re-derive iot devices if you want them updated with new CVEs
-        all_devs = findings["Devices"]
-        from analysis.iot_detection import find_iot_devices
+        # Define all_devs from the findings before calling find_iot_devices
+        all_devs = findings.get("Devices", [])
         iot_devs = find_iot_devices(all_devs, nvd_api_key)
 
+        print("Regenerating PDF from existing final_results.json data...")
         generate_pdf_report(
             findings=findings,
             alerts=alerts,
             shodan_results=shodan_res,
             conn_results=conn_zeek,
             dns_results=dns_zeek,
-            iot_devices=iot_devs
+            iot_devices=iot_devs,
+            output_file="security_audit_report.pdf"
         )
-        print("Regenerated PDF from existing data. Exiting.")
+        print("Report regenerated: security_audit_report.pdf")
         sys.exit(0)
 
-    # Normal flow
+    # Normal run: parse duration and subnets from args
     duration = 60
     if len(sys.argv) > 1:
         try:
             duration = int(sys.argv[1])
         except ValueError:
-            pass
+            print("Invalid duration argument, using default 60 minutes.")
 
     subnets = "10.0.0.0/8 172.16.0.0/12 192.168.0.0/16"
     if len(sys.argv) > 2:
         subnets = sys.argv[2]
 
-    # optional 4th arg is nvd api key
+    # Optional: NVD API key as 3rd argument
     nvd_api_key = ""
     if len(sys.argv) > 3:
         nvd_api_key = sys.argv[3]
 
-    # Nmap scanning
+    # 1. Nmap scanning
+    print(f"Discovering hosts in {subnets} ...")
     live_hosts = run_nmap_discovery(subnets)
     nmap_output = run_nmap_details(live_hosts)
     findings = parse_nmap_results(nmap_output)
 
-    # Packet capture & Suricata
+    # 2. Packet capture & Suricata
     run_packet_capture(duration)
     run_suricata_analysis()
     alerts = analyze_suricata_logs()
 
-    # Shodan
+    # 3. Shodan lookup
     shodan_res = run_shodan_lookup()
 
-    # Zeek
+    # 4. Zeek parsing
     conn_zeek = parse_zeek_conn_log()
     dns_zeek = parse_zeek_dns_log()
 
-    # IoT detection w/ CVEs from NVD
-    all_devs = findings["Devices"]
+    # 5. IoT detection with CVEs via NVD API
+    all_devs = findings.get("Devices", [])
     iot_devs = find_iot_devices(all_devs, nvd_api_key)
 
-    # Generate PDF
+    # 6. Generate PDF report
     generate_pdf_report(
         findings=findings,
         alerts=alerts,
@@ -106,7 +113,7 @@ def main():
     )
     print("Report generated: security_audit_report.pdf")
 
-    # Save final JSON
+    # 7. Save final JSON data
     final_data = {
         "nmap": findings,
         "suricata": alerts,
@@ -116,10 +123,9 @@ def main():
             "top_domains": dns_zeek
         }
     }
-    with open("final_results.json","w") as jf:
+    with open("final_results.json", "w") as jf:
         json.dump(final_data, jf, indent=2)
     print("Created final_results.json with consolidated data.")
-
 
 if __name__ == "__main__":
     main()
