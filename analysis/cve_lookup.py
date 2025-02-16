@@ -1,37 +1,30 @@
-# file: analysis/cve_lookup.py
-
 import requests
 import time
-import urllib.parse  # For URL encoding
+import urllib.parse
 
 NVD_CVE_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 
 def get_cves_for_model(model_str, nvd_api_key):
     """
     Query the NVD API for CVEs related to a given model string.
-    Handles API errors, including 404, rate limits, and malformed requests.
+    Uses URL encoding and direct query strings.
     """
 
-    # URL Encode the model string
+    # URL Encode the model string properly
     encoded_model_str = urllib.parse.quote(model_str)
 
-    params = {
-        "keywordSearch": model_str,  # No need to encode in params dict
-        "resultsPerPage": 20
-    }
-    headers = {
-        "apiKey": nvd_api_key
-    }
-
+    # Manually construct the query URL
     full_request_url = f"{NVD_CVE_URL}?keywordSearch={encoded_model_str}&resultsPerPage=20"
 
-    # Debugging: Print request details
+    # Use only API key in headers
+    headers = {"apiKey": nvd_api_key}
+
     print(f"\n[DEBUG] Querying NVD API:")
     print(f"  URL: {full_request_url}")
     print(f"  Headers: {headers}")
 
     try:
-        response = requests.get(NVD_CVE_URL, params=params, headers=headers, timeout=15)
+        response = requests.get(full_request_url, headers=headers, timeout=15)
 
         if response.status_code == 200:
             data = response.json()
@@ -61,5 +54,4 @@ def get_cves_for_model(model_str, nvd_api_key):
         print(f"[ERROR] NVD API request failed: {e}")
         return []
 
-    # Prevent rate-limiting issues
-    time.sleep(1)  # Small delay between requests
+    time.sleep(1)  # Small delay to prevent rate-limiting
