@@ -16,12 +16,11 @@ def get_cves_for_model(model_str, nvd_api_key):
     encoded_model_str = urllib.parse.quote(model_str)
 
     params = {
-        "keywordSearch": model_str,  # Note: No need to encode in params dict
+        "keywordSearch": model_str,  # No need to encode in params dict
         "resultsPerPage": 20
     }
     headers = {
-        "apiKey": nvd_api_key,
-        "User-Agent": "SecurityAuditScript/1.0"  # Some APIs require this
+        "apiKey": nvd_api_key
     }
 
     full_request_url = f"{NVD_CVE_URL}?keywordSearch={encoded_model_str}&resultsPerPage=20"
